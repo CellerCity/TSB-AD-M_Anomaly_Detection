@@ -18,7 +18,7 @@ From mTSBench:- (13)
 * SVDB
 * creditcard
 
-* From TSB-AD-M: (3)
+From TSB-AD-M: (3)
 * SWaT
 * LTDB
 * TAO 
