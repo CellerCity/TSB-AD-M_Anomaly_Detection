@@ -1,0 +1,2 @@
+model,dataset,filename,error,trace_tail
+PCA,SWaT,172_SWaT_id_2_Sensor_tr_23700_1st_23800.csv,"MemoryError: Unable to allocate 19.0 GiB for an array with shape (399795, 6375) and data type float64","numpy.core._exceptions._ArrayMemoryError: Unable to allocate 19.0 GiB for an array with shape (399795, 6375) and data type float64"
