@@ -67,10 +67,22 @@ def _load_model(name: str):
     if name == "OmniAnomaly":
         from omnianomaly_helper import anomaly_OmniAnomaly
         return anomaly_OmniAnomaly
+    if name == "TimesFM":
+        from timesfm_helper import anomaly_TimesFM
+        return anomaly_TimesFM
+    if name == "CNN":
+        from cnn_helper import anomaly_CNN
+        return anomaly_CNN
+    if name == "LSTMAD":
+        from lstmad_helper import anomaly_LSTMAD
+        return anomaly_LSTMAD
+    if name == "FITS":
+        from fits_helper import anomaly_FITS
+        return anomaly_FITS
     raise ValueError(f"Unknown model: {name}")
 
 
-AVAILABLE_MODELS = ["PCA", "IForest", "CBLOF", "RobustPCA", "KMeansAD", "OmniAnomaly"]
+AVAILABLE_MODELS = ["PCA", "IForest", "CBLOF", "RobustPCA", "KMeansAD", "OmniAnomaly", "TimesFM", "CNN", "LSTMAD", "FITS"]
 
 
 # -----------------------------------------------------------------------------
