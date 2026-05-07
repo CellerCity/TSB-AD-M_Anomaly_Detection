@@ -38,6 +38,10 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
 from TSB_AD.models.RobustPCA import RobustPCA
+if not hasattr(RobustPCA, "__sklearn_tags__"):
+    from sklearn.base import BaseEstimator
+    RobustPCA.__sklearn_tags__ = BaseEstimator.__sklearn_tags__
+
 from TSB_AD.evaluation.metrics import get_metrics
 
 warnings.filterwarnings("ignore")

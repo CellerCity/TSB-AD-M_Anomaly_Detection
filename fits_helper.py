@@ -24,6 +24,10 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
 from TSB_AD.models.FITS import FITS
+if not hasattr(FITS, "__sklearn_tags__"):
+    from sklearn.base import BaseEstimator
+    FITS.__sklearn_tags__ = BaseEstimator.__sklearn_tags__
+
 from TSB_AD.evaluation.metrics import get_metrics
 
 warnings.filterwarnings("ignore")

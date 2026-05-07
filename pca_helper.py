@@ -21,6 +21,10 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
 from TSB_AD.models.PCA import PCA
+if not hasattr(PCA, "__sklearn_tags__"):
+    from sklearn.base import BaseEstimator
+    PCA.__sklearn_tags__ = BaseEstimator.__sklearn_tags__
+
 from TSB_AD.evaluation.metrics import get_metrics
 
 warnings.filterwarnings("ignore")
