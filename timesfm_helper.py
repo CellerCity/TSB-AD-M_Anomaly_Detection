@@ -35,6 +35,7 @@ import threading
 import warnings
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from tqdm import tqdm
 
 from TSB_AD.evaluation.metrics import get_metrics
 
@@ -59,7 +60,7 @@ TIMESFM_HP = dict(
     # utilization, more VRAM. 192 was tuned for T4 with context_len=96
     # and per-feature univariate forecasting (each feature is its own
     # input sequence).
-    batch_size=192,
+    batch_size=128,
 
     # Hugging Face checkpoint id.
     checkpoint_id="google/timesfm-2.5-200m-pytorch",
@@ -72,6 +73,39 @@ TIMESFM_HP = dict(
 _MODEL = None
 _MODEL_LOCK = threading.Lock()
 _MODEL_WARMED = False
+
+
+# def _get_model():
+#     """Load TimesFM 2.5 once and cache it. Thread-safe."""
+#     global _MODEL
+#     if _MODEL is not None:
+#         return _MODEL
+
+#     with _MODEL_LOCK:
+#         if _MODEL is not None:
+#             return _MODEL
+
+#         import torch
+#         import timesfm
+#         from timesfm import TimesFM_2p5_200M_torch
+
+#         torch.set_float32_matmul_precision("high")
+
+#         print("[TimesFM] Loading TimesFM 2.5 checkpoint... (one-time)")
+#         model = TimesFM_2p5_200M_torch.from_pretrained(TIMESFM_HP["checkpoint_id"])
+
+#         print(f"[TimesFM] Compiling for context_len={TIMESFM_HP['context_len']}, "
+#               f"horizon={TIMESFM_HP['horizon']}...")
+#         forecast_config = timesfm.configs.ForecastConfig(
+#             max_context=TIMESFM_HP["context_len"],
+#             max_horizon=TIMESFM_HP["horizon"],
+#         )
+#         model.compile(forecast_config=forecast_config)
+
+#         print("[TimesFM] Loaded.")
+#         _MODEL = model
+#         return _MODEL
+
 
 
 def _get_model():
@@ -90,6 +124,21 @@ def _get_model():
 
         torch.set_float32_matmul_precision("high")
 
+        # =====================================================================
+        # MONKEY PATCH START: Fix the 'proxies' TypeError caused by newer HF Hub
+        # =====================================================================
+        original_init = TimesFM_2p5_200M_torch.__init__
+        
+        def patched_init(self, *args, **kwargs):
+            # Only pass the arguments that TimesFM actually expects
+            valid_kwargs = {k: v for k, v in kwargs.items() if k in ['torch_compile', 'config']}
+            original_init(self, *args, **valid_kwargs)
+            
+        TimesFM_2p5_200M_torch.__init__ = patched_init
+        # =====================================================================
+        # MONKEY PATCH END
+        # =====================================================================
+
         print("[TimesFM] Loading TimesFM 2.5 checkpoint... (one-time)")
         model = TimesFM_2p5_200M_torch.from_pretrained(TIMESFM_HP["checkpoint_id"])
 
@@ -104,6 +153,7 @@ def _get_model():
         print("[TimesFM] Loaded.")
         _MODEL = model
         return _MODEL
+
 
 
 def _warmup_jit(model, n_features_for_warmup: int):
@@ -204,9 +254,11 @@ def anomaly_TimesFM(data_train: np.ndarray,
     predictions = np.empty((valid_samples, n_features), dtype=np.float32)
 
     # Process in fixed-size batches
-    for start in range(0, valid_samples, batch_size):
+    # ADDED TQDM HERE to see batch-level progress
+    for start in tqdm(range(0, valid_samples, batch_size), desc="TimesFM Batches", leave=False):
         end = min(start + batch_size, valid_samples)
         cur = end - start
+
 
         # Flatten (cur, n_features, context_len) -> (cur * n_features, context_len)
         # Each feature is treated as its own univariate context for TimesFM.
