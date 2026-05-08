@@ -1,2 +1,0 @@
-dataset,n_series,runtime_sec,AUC-PR,AUC-ROC,VUS-PR,VUS-ROC,Standard-F1,PA-F1,Event-based-F1,R-based-F1,Affiliation-F
-SWaT,2,18.08,0.1814,0.4778,0.1875,0.4651,0.0209,0.0236,0.0687,0.0088,0.1379
