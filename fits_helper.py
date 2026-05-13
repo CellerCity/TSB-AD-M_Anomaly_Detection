@@ -44,7 +44,7 @@ FITS_HP = dict(
     cut_freq=12,
     batch_size=128,
     epochs=50,
-    lr=1e-3,
+    lr=0.001,
     validation_size=0.2,
 )
 

@@ -1,0 +1,26 @@
+model,dataset,series,error,trace_tail
+LSTMAD,SMAP,SMAP/SMAP_A-5,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,SMAP,SMAP/SMAP_A-6,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,MSL,MSL/MSL_T-8,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_1_2_100000_68,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_1_5_1000000_86,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_2_2_200000_69,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_2_5_1000000_88,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_3_2_500000_70,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_3_4_1000000_81,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_4_5_1000000_90,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_5_2_1000000_72,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,Exathlon,Exathlon/Exathlon_5_4_1000000_82,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,LTDB,LTDB/080_LTDB_id_2_Medical_tr_500_1st_266.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,LTDB,LTDB/081_LTDB_id_3_Medical_tr_500_1st_26.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/116_TAO_id_1_Environment_tr_500_1st_3.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/117_TAO_id_2_Environment_tr_500_1st_1.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/118_TAO_id_3_Environment_tr_500_1st_7.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/119_TAO_id_4_Environment_tr_500_1st_1.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/121_TAO_id_6_Environment_tr_500_1st_7.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/122_TAO_id_7_Environment_tr_500_1st_19.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/123_TAO_id_8_Environment_tr_500_1st_62.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/124_TAO_id_9_Environment_tr_500_1st_1.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/125_TAO_id_10_Environment_tr_500_1st_9.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/127_TAO_id_12_Environment_tr_500_1st_24.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList
+LSTMAD,TAO,TAO/128_TAO_id_13_Environment_tr_500_1st_7.csv,RuntimeError: stack expects a non-empty TensorList,RuntimeError: stack expects a non-empty TensorList

@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 # Hyperparameters
 # -----------------------------------------------------------------------------
 CNN_HP = dict(
-    window_size=100,            # fixed by optimal HP; not auto-detected
+    window_size=50,            # fixed by optimal HP; not auto-detected
     pred_len=1,
     feats=1,                    # overridden per task from data.shape[1]
     num_channel=[32, 32, 40],
