@@ -34,7 +34,7 @@ F2A_DATASETS = [
 ]
 
 # F2A Table 2 column order (now the ROW order)
-DEFAULT_MODELS = ["IForest", "CBLOF", "PCA", "RobustPCA", "KMeansAD", "OmniAnomaly"]
+DEFAULT_MODELS = ["IForest", "CBLOF", "PCA", "RobustPCA", "KMeansAD", "OmniAnomaly", "FITS"]
 
 # Default metric order: F2A's primary first, then the rest
 DEFAULT_METRIC_PRIORITY = [
