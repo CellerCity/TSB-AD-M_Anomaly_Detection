@@ -1,15 +1,12 @@
 # Ablation sweep over (context_length, horizon) for TimesFM zero-shot anomaly detection.
 #
-# - Configurable per dataset (SMD, Exathlon, etc).
-# - Skips cells whose output CSV already exists (resume-friendly after a crash).
-# - Logs each cell's stdout/stderr to logs/.
-# - Continues past individual cell failures.
-# - Calls average_methods.py at the end to produce one summary CSV per dataset.
+# Each cell runs the forecast once and evaluates all 16 (score x agg) combinations.
+# Output: one CSV per cell + one final summary CSV across the whole sweep.
+#
+# Native Windows PowerShell. Run from a PowerShell session with your conda env active.
 #
 # Usage:
 #   .\run_ablation.ps1 -Dataset SMD
-#   .\run_ablation.ps1 -Dataset SMD -ScoreMethod mse
-#   .\run_ablation.ps1 -Dataset SMD -ScoreMethods "interval","mse"
 #   .\run_ablation.ps1 -Dataset Exathlon -Force
 #   .\run_ablation.ps1 -Dataset SMD -DataPattern ".\custom\path\*.csv"
 
@@ -19,21 +16,13 @@ param(
     [string]$Dataset,
 
     [string]$DataPattern = "",
-    [string]$DataRoot = ".\mTSBench",
-    [string]$ScoreMethod = "",
-    [string[]]$ScoreMethods = @("interval"),
-    [string]$AggMethod = "l2",
+    [string]$DataRoot    = ".\mTSBench",
     [switch]$Force
 )
 
-# Allow -ScoreMethod (singular) as a shortcut for one method.
-if ($ScoreMethod -ne "") {
-    $ScoreMethods = @($ScoreMethod)
-}
-
 # -------------------- DEFAULT CONFIG --------------------
-$Contexts = @(256, 512, 1024)
-$Horizons = @(5, 10, 30, 50, 100)
+$Contexts    = @(256, 512, 1024)
+$Horizons    = @(5, 10, 30, 50, 100)
 $ResultsRoot = "ablation_results"
 $LogsRoot    = "ablation_logs"
 $SummaryDir  = "ablation_summaries"
@@ -43,14 +32,23 @@ if ($DataPattern -eq "") {
     $DataPattern = Join-Path (Join-Path $DataRoot $Dataset) "*test.csv"
 }
 
-# Per-dataset output dirs so sweeps don't collide.
+# Per-dataset output dirs so different datasets don't collide.
 $ResultsDir = Join-Path $ResultsRoot $Dataset
-$LogsDir    = Join-Path $LogsRoot $Dataset
-$SummaryCsv = Join-Path $SummaryDir "$($Dataset)_summary.csv"
+$LogsDir    = Join-Path $LogsRoot    $Dataset
+$SummaryCsv = Join-Path $SummaryDir  "$($Dataset)_combos_summary.csv"
 
 New-Item -ItemType Directory -Force -Path $ResultsDir, $LogsDir, $SummaryDir | Out-Null
 
-# Confirm the glob actually matches something before we start.
+# -------------------- PRE-FLIGHT CHECKS --------------------
+# Confirm Python sees its required packages and the GPU.
+& python -c "import numpy, torch, timesfm; print('python OK; CUDA available:', torch.cuda.is_available())" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Python environment missing required packages." -ForegroundColor Red
+    Write-Host "  Make sure your conda env is activated before running this script." -ForegroundColor Red
+    exit 1
+}
+
+# Confirm the glob matches something.
 $Matched = @(Get-ChildItem -Path $DataPattern -ErrorAction SilentlyContinue)
 if ($Matched.Count -eq 0) {
     Write-Host "ERROR: data_pattern '$DataPattern' matched 0 files." -ForegroundColor Red
@@ -65,64 +63,42 @@ Write-Host "  data pattern:   $DataPattern"
 Write-Host "  files matched:  $($Matched.Count)"
 Write-Host "  contexts:       $($Contexts -join ' ')"
 Write-Host "  horizons:       $($Horizons -join ' ')"
-Write-Host "  score_methods:  $($ScoreMethods -join ' ')"
-Write-Host "  agg_method:     $AggMethod"
 Write-Host "  results dir:    $ResultsDir\"
 Write-Host "  logs dir:       $LogsDir\"
 Write-Host "  summary csv:    $SummaryCsv"
 Write-Host "  force re-run:   $Force"
+Write-Host "  (each cell evaluates all 16 score x agg combos in one forecast)"
 Write-Host "================================================================"
 
-# Quick sanity check that Python sees its packages.
-& python -c "import numpy, torch, timesfm; print('python OK, torch CUDA available:', torch.cuda.is_available())" 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Python environment is missing required packages. Activate the conda env first." -ForegroundColor Red
-    exit 1
-}
-
 # -------------------- RUN GRID --------------------
-$Total = $Contexts.Count * $Horizons.Count * $ScoreMethods.Count
-$Counter = 0
+$Total     = $Contexts.Count * $Horizons.Count
+$Counter   = 0
 $Succeeded = @()
 $Skipped   = @()
 $Failed    = @()
-
-# Parallel arrays for the summary call.
-$SummaryFiles = @()
-$SummaryCtx   = @()
-$SummaryHor   = @()
-$SummaryScore = @()
-
 $StartTime = Get-Date
 
-foreach ($sm in $ScoreMethods) {
-  foreach ($ctx in $Contexts) {
-    foreach ($hor in $Horizons) {
+foreach ($ctx in $Contexts) {
+  foreach ($hor in $Horizons) {
         $Counter++
-        $Tag     = "c${ctx}_h${hor}_${sm}"
+        $Tag     = "c${ctx}_h${hor}_all"
         $OutCsv  = Join-Path $ResultsDir "$Tag.csv"
         $LogFile = Join-Path $LogsDir    "$Tag.log"
 
         Write-Host ""
-        Write-Host "[$Counter/$Total] $Dataset context=$ctx horizon=$hor score=$sm"
+        Write-Host "[$Counter/$Total] $Dataset context=$ctx horizon=$hor"
 
         if ((Test-Path $OutCsv) -and (-not $Force)) {
             Write-Host "  -> Output exists, skipping (use -Force to re-run): $OutCsv"
-            $Skipped      += $Tag
-            $SummaryFiles += $OutCsv
-            $SummaryCtx   += $ctx
-            $SummaryHor   += $hor
-            $SummaryScore += $sm
+            $Skipped += $Tag
             continue
         }
 
         $CellStart = Get-Date
-        & python timesFM_modularised.py `
+        & python timesFM_all_combos.py `
             --data_pattern   $DataPattern `
             --context_length $ctx `
             --horizon        $hor `
-            --score_method   $sm `
-            --agg_method     $AggMethod `
             --save_path      $OutCsv `
             *>&1 | Out-File -FilePath $LogFile -Encoding UTF8
         $Status  = $LASTEXITCODE
@@ -130,17 +106,12 @@ foreach ($sm in $ScoreMethods) {
 
         if (($Status -eq 0) -and (Test-Path $OutCsv)) {
             Write-Host "  -> OK in ${Elapsed}s   ($OutCsv)"
-            $Succeeded    += $Tag
-            $SummaryFiles += $OutCsv
-            $SummaryCtx   += $ctx
-            $SummaryHor   += $hor
-            $SummaryScore += $sm
+            $Succeeded += $Tag
         }
         else {
             Write-Host "  -> FAILED (exit=$Status, see $LogFile)" -ForegroundColor Red
             $Failed += $Tag
         }
-    }
   }
 }
 
@@ -158,19 +129,19 @@ if ($Failed.Count -gt 0) {
 }
 Write-Host "================================================================"
 
-if ($SummaryFiles.Count -eq 0) {
-    Write-Host "No output files to summarize. Exiting."
+# Aggregate every cell output we have on disk (succeeded + skipped-but-present).
+$AggInputs = @(Get-ChildItem -Path (Join-Path $ResultsDir "*_all.csv"))
+if ($AggInputs.Count -eq 0) {
+    Write-Host "No output files to aggregate. Exiting."
     exit 1
 }
 
 Write-Host ""
-Write-Host "Aggregating $($SummaryFiles.Count) cells into $SummaryCsv ..."
-& python average_methods.py `
-    --inputs        @SummaryFiles `
-    --contexts      @SummaryCtx `
-    --horizons      @SummaryHor `
-    --score_methods @SummaryScore `
-    --output        $SummaryCsv
+Write-Host "Aggregating $($AggInputs.Count) cell files into $SummaryCsv ..."
+$InputPaths = $AggInputs | ForEach-Object { $_.FullName }
+& python average_combos.py `
+    --inputs @InputPaths `
+    --output $SummaryCsv
 
 Write-Host ""
 Write-Host "Done. Final summary: $SummaryCsv"
