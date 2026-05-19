@@ -1,3 +1,7 @@
+trash_files/
+results-1/
+results/
+File_List/
 TSB-AD-M/
 mTSBench/
 timesfm/
@@ -7,5 +11,3 @@ tfrbench_submission/
 ablation_logs/
 ablation_results/
 ablation_summaries/
-trash_files/
-

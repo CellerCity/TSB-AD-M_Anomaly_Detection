@@ -1,2 +1,0 @@
-model,dataset,series,error,trace_tail
-IForest,SWaT,SWaT/172_SWaT_id_2_Sensor_tr_23700_1st_23800.csv,"MemoryError: Unable to allocate 17.9 GiB for an array with shape (376095, 6375) and data type float64","numpy.core._exceptions._ArrayMemoryError: Unable to allocate 17.9 GiB for an array with shape (376095, 6375) and data type float64"
