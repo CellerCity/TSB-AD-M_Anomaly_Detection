@@ -1,3 +1,19 @@
+
+# -------------------- DETECT PYTHON --------------------
+# On Linux/macOS this is usually `python` (inside a conda env) or `python3`.
+# On Windows + Git Bash this is often `py` or `python`.
+if command -v python >/dev/null 2>&1; then
+    PYTHON=python
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+elif command -v py >/dev/null 2>&1; then
+    PYTHON=py
+else
+    echo "ERROR: No Python interpreter found (tried python, python3, py)." >&2
+    exit 1
+fi
+echo "Using Python: $($PYTHON --version 2>&1) at $(command -v $PYTHON)"
+
 #!/usr/bin/env bash
 # Ablation sweep over (context_length, horizon) for TimesFM zero-shot anomaly detection.
 #
@@ -127,7 +143,7 @@ for sm in "${SCORE_METHODS[@]}"; do
         fi
 
         CELL_START=$(date +%s)
-        python timesFM_modularised.py \
+        $PYTHON timesFM_modularised.py \
             --data_pattern   "$DATA_PATTERN" \
             --context_length $ctx \
             --horizon        $hor \
@@ -175,7 +191,7 @@ fi
 
 echo ""
 echo "Aggregating ${#SUMMARY_FILES[@]} cells into $SUMMARY_CSV ..."
-python average_methods.py \
+$PYTHON average_methods.py \
     --inputs        "${SUMMARY_FILES[@]}" \
     --contexts      "${SUMMARY_CTX[@]}" \
     --horizons      "${SUMMARY_HOR[@]}" \

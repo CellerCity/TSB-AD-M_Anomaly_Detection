@@ -1,4 +1,12 @@
-# FORWARD:-
+# BACKWARD:-
+#
+# Symmetric counterpart to timesFM_modularised.py (FORWARD).
+# For each window [s, s+h), use the FUTURE rows [s+h, s+h+context_length)
+# REVERSED as context, ask TimesFM to predict h steps in fake-time, then flip
+# the quantile predictions back so row i aligns with real-time index s+i.
+#
+# When the future runs out near the end of the series, fall back to a forward
+# forecast from the preceding past so every row of df still gets a score.
 
 import os
 import glob
@@ -51,22 +59,22 @@ def set_seed(seed):
 
 # -------------------- ARGUMENT PARSING --------------------
 def parse_args():
-    parser = argparse.ArgumentParser(description="TimesFM Zero-Shot Anomaly Detection (TSB-AD)")
+    parser = argparse.ArgumentParser(description="TimesFM Zero-Shot Backward Anomaly Detection (TSB-AD)")
     parser.add_argument(
         "--data_pattern", type=str, default="./mTSBench/SMD/*test.csv",
         help="Glob pattern for input test CSVs",
     )
     parser.add_argument(
-        "--save_path", type=str, default="smd_timesfm_results.csv",
+        "--save_path", type=str, default="smd_timesfm_backward_results.csv",
         help="Where to save per-file metrics CSV",
     )
     parser.add_argument(
         "--context_length", type=int, default=512,
-        help=f"Number of past timesteps used as model context (max {MAX_CONTEXT})",
+        help=f"Number of FUTURE timesteps used as (reversed) model context (max {MAX_CONTEXT})",
     )
     parser.add_argument(
         "--horizon", type=int, default=128,
-        help=f"Number of future timesteps forecasted per window (max {MAX_HORIZON})",
+        help=f"Number of timesteps scored per window (max {MAX_HORIZON})",
     )
     parser.add_argument(
         "--windows_per_batch", type=int, default=WINDOWS_PER_BATCH,
@@ -100,7 +108,6 @@ def parse_args():
 # -------------------- MODEL --------------------
 def load_model(weights_path="./timesfm-weights"):
     """Load TimesFM 2.5 and compile with our inference config."""
-     # model = timesfm.TimesFM_2p5_200M_torch.from_pretrained("google/timesfm-2.5-200m-pytorch")
     model = TimesFM_2p5_200M_torch.from_pretrained(weights_path)
     model.compile(
         timesfm.ForecastConfig(
@@ -139,56 +146,111 @@ def compute_sliding_window(data, n_dim):
 
 
 # -------------------- PREDICTION --------------------
-def generate_prediction(model, df, feature_list, n_total, context_length, horizon, windows_per_batch):
-    """Run batched TimesFM forecasts walking from context_length to n_total.
+def generate_backward_prediction(model, df, feature_list, n_total,
+                                 context_length, horizon, windows_per_batch):
+    """Run batched TimesFM forecasts using REVERSED FUTURE rows as context.
+
+    For each window starting at `start` (step = horizon, walking 0 → n_total):
+      - Real-time target  window is [start, start + h).
+      - Real-time future context is [start + h, start + h + context_length),
+        capped at n_total.
+      - If at least `h` future rows are available, reverse them and ask TimesFM
+        to predict `horizon` steps in fake-time. The first predicted step lines
+        up (after flipping) with real-time index `start + h - 1`, and the last
+        with index `start`.
+      - If the future is too short (final window region), FALL BACK to a
+        forward forecast from the preceding past so every row of df is scored.
 
     Returns a long-format DataFrame with columns:
         target_name, t_idx, 0.1, 0.5, 0.9
     where t_idx is the absolute timestep index in the original series.
-    This matches the format consumed by compute_feature_score.
+    Coverage is the full range [0, n_total) thanks to the fallback.
     """
-    starts = list(range(context_length, n_total, horizon))
+    starts = list(range(0, n_total, horizon))
     n_dim  = len(feature_list)
 
     # Each list holds slices of shape (n_dim, h_i) for each window i.
     q10_chunks, q50_chunks, q90_chunks, t_chunks = [], [], [], []
+    fallback_count = 0
 
     pbar = tqdm(
         total=len(starts),
-        desc="  forecasting windows",
+        desc="  backward windows",
         unit="win",
         leave=False,
         position=1,
     )
 
     for i in range(0, len(starts), windows_per_batch):
-        batch_starts    = starts[i : i + windows_per_batch]
-        batch_inputs    = []
-        valid_horizons  = []
+        batch_starts   = starts[i : i + windows_per_batch]
+        batch_inputs   = []
+        valid_horizons = []
+        flip_flags     = []  # True if window is backward (must flip predictions)
 
         # Build inputs: for each window, append n_dim univariate context arrays.
         for start in batch_starts:
             h = min(horizon, n_total - start)
             valid_horizons.append(h)
-            context_df = df.iloc[start - context_length : start]
-            for f in feature_list:
-                batch_inputs.append(context_df[f].to_numpy(dtype=np.float32))
+
+            fut_start     = start + h
+            fut_end       = min(fut_start + context_length, n_total)
+            fut_available = fut_end - fut_start
+
+            if fut_available >= h:
+                # Backward path: reverse the future rows.
+                ctx_df = df.iloc[fut_start:fut_end]
+                flip_flags.append(True)
+                for f in feature_list:
+                    arr = ctx_df[f].to_numpy(dtype=np.float32)
+                    batch_inputs.append(arr[::-1].copy())  # contiguous reversed
+            else:
+                # Fallback: forward forecast from preceding past.
+                past_start = max(0, start - context_length)
+                ctx_df     = df.iloc[past_start:start]
+                if len(ctx_df) == 0:
+                    # Degenerate case: no future AND no past. Skip this window.
+                    # (Only possible on absurdly short series; outer caller
+                    # already gates on n_total > context_length.)
+                    valid_horizons[-1] = 0
+                    flip_flags.append(False)
+                    for _ in feature_list:
+                        batch_inputs.append(np.zeros(1, dtype=np.float32))
+                    continue
+                flip_flags.append(False)
+                fallback_count += 1
+                for f in feature_list:
+                    batch_inputs.append(ctx_df[f].to_numpy(dtype=np.float32))
 
         # One model call for the whole batch.
         _, quantile_forecast = model.forecast(horizon=horizon, inputs=batch_inputs)
 
-        # Slice back into per-window groups of n_dim rows, trimming each to its valid h.
+        # Slice back into per-window groups of n_dim rows; flip if backward.
         current_idx = 0
-        for h, start in zip(valid_horizons, batch_starts):
+        for h, start, flip in zip(valid_horizons, batch_starts, flip_flags):
             window_forecast = quantile_forecast[current_idx : current_idx + n_dim]
-            q10_chunks.append(window_forecast[:, :h, Q10_IDX])
-            q50_chunks.append(window_forecast[:, :h, Q50_IDX])
-            q90_chunks.append(window_forecast[:, :h, Q90_IDX])
-            t_chunks.append(np.arange(start, start + h))
-            current_idx += n_dim
+            current_idx    += n_dim
             pbar.update(1)
+            if h == 0:
+                continue  # degenerate skip
+
+            q10 = window_forecast[:, :h, Q10_IDX]
+            q50 = window_forecast[:, :h, Q50_IDX]
+            q90 = window_forecast[:, :h, Q90_IDX]
+            if flip:
+                # Reversed-context predictions come out in reverse real-time
+                # order. Flip along the time axis so row i aligns with start+i.
+                q10 = q10[:, ::-1]
+                q50 = q50[:, ::-1]
+                q90 = q90[:, ::-1]
+            q10_chunks.append(q10)
+            q50_chunks.append(q50)
+            q90_chunks.append(q90)
+            t_chunks.append(np.arange(start, start + h))
 
     pbar.close()
+
+    if fallback_count > 0:
+        print(f"  fallback (forward-from-past) windows: {fallback_count}")
 
     # Concatenate along time axis -> (n_dim, T_forecasted)
     q10 = np.concatenate(q10_chunks, axis=1)
@@ -196,7 +258,7 @@ def generate_prediction(model, df, feature_list, n_total, context_length, horizo
     q90 = np.concatenate(q90_chunks, axis=1)
     t   = np.concatenate(t_chunks)
 
-    # Build long-format DataFrame matching forward.py's predict_df output.
+    # Build long-format DataFrame matching the forward script's output.
     frames = []
     for i, feat in enumerate(feature_list):
         frames.append(pd.DataFrame({
@@ -209,7 +271,7 @@ def generate_prediction(model, df, feature_list, n_total, context_length, horizo
     return pd.concat(frames, ignore_index=True)
 
 
-# -------------------- ANOMALY SCORING (adopted from forward.py) --------------------
+# -------------------- ANOMALY SCORING (shared with forward) --------------------
 def compute_feature_score(y_actual, group_df, method="interval"):
     y_median = group_df["0.5"].values
     y_lower  = group_df["0.1"].values
@@ -289,15 +351,12 @@ def compute_anomaly_score(prediction_df, df, feature_list, score_method, agg_met
 
 
 # -------------------- POST-PROCESSING --------------------
-def pad_and_smooth(y_score_forecasted, n_total, context_length, smooth_window):
-    """Pad the initial context_length region (no forecast available) with the
-    first valid score, then apply uniform smoothing."""
-    output = np.zeros(n_total)
-    output[:context_length] = y_score_forecasted[0]
-    output[context_length:] = y_score_forecasted
+def smooth_score(y_score, smooth_window):
+    """Backward (with fallback) already covers [0, n_total), so no padding is
+    needed — just smooth."""
     if smooth_window > 1:
-        output = uniform_filter1d(output, size=smooth_window)
-    return output
+        return uniform_filter1d(y_score, size=smooth_window)
+    return y_score
 
 
 # -------------------- PER-FILE PIPELINE --------------------
@@ -317,20 +376,18 @@ def process_file(model, file_path, score_method, agg_method,
     data = df[feature_list].values.astype(float)
     slidingWindow = compute_sliding_window(data, n_dim)
 
-    prediction_df = generate_prediction(
+    prediction_df = generate_backward_prediction(
         model, df, feature_list, n_total,
         context_length, horizon, windows_per_batch,
     )
 
-    y_score_forecasted = compute_anomaly_score(
+    y_score = compute_anomaly_score(
         prediction_df, df, feature_list, score_method, agg_method
     )
 
-    output = pad_and_smooth(
-        y_score_forecasted, n_total, context_length, SMOOTH_WINDOW
-    )
+    y_score = smooth_score(y_score, SMOOTH_WINDOW)
 
-    result = get_metrics(output, label, slidingWindow=slidingWindow)
+    result = get_metrics(y_score, label, slidingWindow=slidingWindow)
 
     return {
         "AUROC":   result["AUC-ROC"],
@@ -354,7 +411,7 @@ def summarize_and_save(results, save_path, score_method):
     avg_vus_pr  = np.mean(results["VUS-PR"])
 
     print("\n" + "=" * 50)
-    print(f"FINAL AVERAGE METRICS (Method: {score_method.upper()})")
+    print(f"FINAL AVERAGE METRICS — BACKWARD (Method: {score_method.upper()})")
     print("=" * 50)
     print(f"Mean AUROC:   {avg_auroc:.4f}")
     print(f"Mean AUPRC:   {avg_auprc:.4f}")
@@ -385,7 +442,7 @@ def main():
         )
 
     print(
-        f"Config: score={args.score_method} agg={args.agg_method} "
+        f"Config: direction=BACKWARD score={args.score_method} agg={args.agg_method} "
         f"context={args.context_length} horizon={args.horizon} "
         f"windows_per_batch={args.windows_per_batch}"
     )
@@ -403,7 +460,7 @@ def main():
 
     for file_path in tqdm(
         file_list,
-        desc=f"Processing Files ({args.score_method})",
+        desc=f"Processing Files [BACKWARD] ({args.score_method})",
         position=0,
     ):
         file_name = os.path.basename(file_path).replace(".csv", "")
@@ -428,9 +485,8 @@ if __name__ == "__main__":
 
 
 # Default run:
-# python timesFM_modularised.py --score_method interval --save_path smd_results_interval.csv
+# python timesFM_backward.py --score_method interval --save_path smd_backward_interval.csv
 
 # Ablation examples:
-# python timesFM_modularised.py --context_length 256  --horizon 32  --save_path smd_c256_h32.csv
-# python timesFM_modularised.py --context_length 1024 --horizon 100 --save_path smd_c1024_h100.csv
-# python timesFM_modularised.py --context_length 1024 --horizon 100 --windows_per_batch 5 --save_path smd_c1024_h100_b5.csv
+# python timesFM_backward.py --context_length 256  --horizon 32  --save_path smd_bwd_c256_h32.csv
+# python timesFM_backward.py --context_length 1024 --horizon 100 --save_path smd_bwd_c1024_h100.csv
